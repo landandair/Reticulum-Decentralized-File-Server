@@ -33,22 +33,48 @@ class CidStore:
         for path in os.listdir(self.store_path):
             full_path = os.path.join(self.store_path, path)
             if os.path.isdir(full_path):
-                if path not in self.index:
-                    shutil.rmtree(full_path, ignore_errors=True)
-                else:
-                    for dir_path, dir_names, file_names in os.walk(full_path):
-                        for f in file_names:
-                            if f not in self.index:
-                                remove_path = os.path.join(dir_path, f)
-                                os.remove(remove_path)
-                        for d in dir_names:
-                            if d not in self.index:
-                                remove_path = os.path.join(dir_path, d)
-                                shutil.rmtree(remove_path, ignore_errors=True)
+                for dir_path, dir_names, file_names in os.walk(full_path):
+                    for f in file_names:
+                        if f not in self.index:
+                            remove_path = os.path.join(dir_path, f)
+                            os.remove(remove_path)
+
+    def check_is_stored(self, hash):
+        """Update storage status of node and all child nodes in store. Call before delivering node info"""
+        node = self.get_node_obj(hash)
+        if node:
+            if node.type != 3:  # Check all children present if not chunk
+                stored = True
+                for child in node.children:
+                    child_stored = self.check_is_stored(child)
+                    if not child_stored:  # if any children are false the node isnt stored
+                        stored = False
+            else:  # Check for file existence
+                stored = os.path.isfile(self.get_data_path(node.hash))
+            node.is_stored = stored
+            return stored
+        else: # No node exists
+            return False
 
     def save_index(self):
         with open(os.path.join(self.store_path, 'index.pickle'), 'wb') as f:
             pickle.dump(self.index, f)
+
+    def add_data(self, hash, data: bytes):
+        """Adds node data gained in response from request"""
+        node = self.get_node_obj(hash)
+        if node:
+            source = self.get_parent_hashes(hash)
+            """TODO: Make it so you can add node to index without it already being there"""
+            if source[0] != self.source_hash:  # Add data only if it doesn't conflict with our data
+                if self.is_storage_hash(hash):
+                    if hash == self.get_data_hash(node.parent, data, include_source=False):
+                        self.add_node(node.name, node.parent, node.type, node.time_stamp, data, stored=True)
+                    else:
+                        logger.warning(f"Expected data hash of {hash} but got {self.get_data_hash(node.parent, data, include_source=False)} instead.")
+                else:  # Try to decode as a json store and load the dictionary
+                    data_dict = json.loads(data)
+                    self.add_node_dict(data_dict)
 
     def add_node_dict(self, node_dict):
         """Adds node dictionary to your index. Todo: Handle all intersections between new and old nodes"""
@@ -66,14 +92,12 @@ class CidStore:
         node_type = 1  # File store
         if not parent:
             parent = self.source_hash
-        parent_type = self.index[parent].type
+        parent_type = self.get_node_obj(parent).type
         if parent_type == 1 or parent_type == 3:  # Invalid because file cannot be child of file or file chunk
             logger.warning("Cannot add file node: parent of node cannot be a file or file chunk")
             return False  # Return early false for error
         if not name:
             name = os.path.split(data_path)[-1]  # use file name if name isn't given
-        parents = self.get_parent_hashes(parent)
-        parents.append(parent)  # full parent list for forming storage path
         with open(data_path, 'rb') as f:
             data = f.read()
         return self.add_node(name, parent, node_type, None, data)
@@ -90,31 +114,33 @@ class CidStore:
                 time_stamp = int(time.time())
             size = 0
             if data_store:  # Save data to storage path along with calculating hash
-                hash_digest = self.get_data_hash(parent, data_store)
+                hash_digest = self.get_data_hash(parent, data_store, node_type != 3)  # Check if it is a file chunk when getting hash
                 size = len(data_store)
                 stored = True
             else:  # Not a storage node, so calculate hash based on source path
                 hash_digest = self.get_path_hash(parent)
-            self.index[parent].children.append(hash_digest)
+            self.get_node_obj(parent).children.append(hash_digest)
             self.index[hash_digest] = Cid(hash_digest, name, time_stamp, size, parent, children, stored, node_type)
             if size and node_type == 1:  # Is of type file so break into chunks
                 for i, pos in enumerate(range(0, size, self.chunk_size)):
                     self.add_node(f'{name}.chunk_{i}', hash_digest, 3, time_stamp, data_store[pos:pos+self.chunk_size])
             elif size:
-                with open(os.path.join(self.store_path, self.get_data_path(hash_digest)), 'wb') as f:
+                with open(self.get_data_path(hash_digest), 'wb') as f:
                     f.write(data_store)
+            print('hash_gen', hash_digest)
             return hash_digest
 
     def get_data_path(self, node_hash):  # get data path
         """Returns the path where data associated with node should be stored"""
-        path = self.store_path
-        node = self.index[node_hash]
-        for p in self.get_parent_hashes(node_hash):  # Calculating parent part of path
-            path = os.path.join(path, self.index[p].hash)
+        path = os.path.join(self.store_path, 'store')
+        node = self.get_node_obj(node_hash)
+        if node:
+            # for p in self.get_parent_hashes(node_hash):  # Calculating parent part of path
+            #     path = os.path.join(path, self.index[p].hash)
             if not os.path.isdir(path):  # make path if none exists
                 os.mkdir(path)
-        path = os.path.join(path, node.hash)
-        return path
+            path = os.path.join(path, node.hash)
+            return path
 
     def get_path_hash(self, parent_hash):
         """Get hash associated with path to current hash to the source node"""
@@ -125,19 +151,25 @@ class CidStore:
         hash_digest = hash_alg.hexdigest()
         return hash_digest
 
-    def get_data_hash(self, parent_hash, data: bytes):
-        """Gets binary hash of a data node including source information"""
+    def get_data_hash(self, parent_hash, data: bytes, include_source=True):
+        """Gets binary hash of a data node including source information if desired(is file pointer)"""
         hash_alg = self.hash_alg.copy()  # Hash alg for forming main file hash
-        hash_alg.update(self.get_path_hash(parent_hash).encode('utf8'))
+        if include_source:
+            hash_alg.update(self.get_path_hash(parent_hash).encode('utf8'))
         hash_alg.update(data)
         hash_digest = hash_alg.hexdigest()
         return hash_digest
 
+    def get_node_obj(self, hash):
+        if hash in self.index:
+            return self.index[hash]
+
     def get_node(self, hash):
         """Get data associated with node either its information about its children, or the file chunk itself packaged
         in binary. Return nothing if no data was found"""
-        if hash in self.index:
-            node = self.index[hash]
+        self.check_is_stored(hash)  # Update all storage status for nodes
+        node = self.get_node_obj(hash)
+        if node:
             if node.type != 3:  # look for node information
                 info = self.get_node_information(hash)
                 if len(info) > 1:
@@ -147,24 +179,26 @@ class CidStore:
                 return data
 
     def get_data(self, hash):
-        """Blindly retrieve associated data"""
-        node = self.index[hash]
-        path = os.path.join(self.store_path, self.get_data_path(hash))
-        if os.path.exists(path):
-            with open(path, 'rb') as f:
-                data = f.read()
-            if node.hash == self.get_data_hash(node.parent, data):
-                return data
+        """Blindly retrieve associated chunk data"""
+        node = self.get_node_obj(hash)
+        if node:
+            path = os.path.join(self.store_path, self.get_data_path(hash))
+            if os.path.exists(path):
+                with open(path, 'rb') as f:
+                    data = f.read()
+                print(node.hash, self.get_data_hash(node.parent, data, include_source=False))
+                if node.hash == self.get_data_hash(node.parent, data, include_source=False):
+                    return data
+                else:
+                    logger.warning(f'Data stored in {node.hash} did not match hash')
             else:
-                logger.warning(f'Data stored in {node.hash} did not match hash')
-        else:
-            node.is_stored = False
+                node.is_stored = False
 
     def get_node_information(self, hash, initial_req=True):
         """Returns a dict of all node information below hash in tree"""
         node_dict = {}
-        if hash in self.index:
-            node = self.index[hash]
+        node = self.get_node_obj(hash)
+        if node:
             node_dict[hash] = node.dump()
             if node.type != 1 or initial_req:  # ignore file chunks unless initial request
                 for child_hash in node.children:
@@ -173,17 +207,44 @@ class CidStore:
                         node_dict.update(child_dict)
         return node_dict
 
+    def is_storage_hash(self, hash_str):
+        node = self.get_node_obj(hash_str)
+        if node:
+            if node.type == 3:
+                return True
+        else:
+            return False
+
     def get_parent_hashes(self, node_hash):
         """Returns a list of parent hashes starting at source"""
         parent_hashes = []
-        if node_hash in self.index:
-            if self.index[node_hash].type != 0:
-                parent = self.index[node_hash].parent
+        node = self.get_node_obj(node_hash)
+        if node:
+            if node.type != 0:
+                parent = node.parent
                 parent_hashes = self.get_parent_hashes(parent)
                 parent_hashes.append(parent)
         else:
             logger.warning('Could not get parent hash, parent was not in index')
         return parent_hashes
+
+    def get_children(self, node_hash):
+        child_hashes = []
+        node = self.get_node_obj(node_hash)
+        if node:
+            if node.type != 1:  # exclude chunks as children
+                for c in node.children:
+                    child_hashes.append(c)
+                    child_children = self.get_children(c)
+                    child_hashes.extend(child_children)
+        return child_hashes
+
+    def get_source_checksum(self, source_hash):
+        children = self.get_children(source_hash)
+        children_data = str(sorted(children)).encode('utf8')
+        data_hash = self.get_data_hash(b'', children_data, include_source=False)
+        return data_hash
+
 
 @dataclass
 class Cid:
@@ -218,7 +279,7 @@ def cid_builder(node_dict):
         parent = node_dict['parent']
         children = node_dict['children']
         node_type = node_dict['type']
-        stored = node_dict['is_stored']
+        stored = False
         cid = Cid(hash, name, time_stamp, size, parent, children, stored, node_type)
         return cid
     except KeyError:
@@ -241,6 +302,7 @@ if __name__ == '__main__':
     print(store.add_file_node('../README.md', 'readme.md'))
     f_hash = store.add_file_node('../test/hello.txt', 'test.txt', '12345')
     file_data = json.loads(store.get_node(f_hash))
+    print(file_data)
     for hash in file_data[f_hash]['children']:
         print(store.get_node(hash))
     store.save_index()
