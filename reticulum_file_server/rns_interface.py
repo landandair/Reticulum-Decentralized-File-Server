@@ -33,7 +33,7 @@ class RNSInterface:
     NEW_HASH_ID = "NH"  # New node hash present: non-file-segment node information
     CHECKSUM_ID = "CS"  # Checksum of whole destination index check against local copy
 
-    def __init__(self, cid_store: CidStore, config_path=None, allow_all=False):
+    def __init__(self, cid_store: CidStore, server_identity: RNS.Identity, allow_all=False):
         self.hash_requests = []  # List of hashes requested from network
         self.cid_store = cid_store  # Store of data
         self.currently_linked = False  # Maintain whether we are currently connected to a peer Used to limit incoming
@@ -46,8 +46,7 @@ class RNSInterface:
         self.request_id_to_hash = {}
         self.max_allowed_attempts = 5
 
-        self.reticulum = RNS.Reticulum(config_path)
-        self.server_identity = RNS.Identity()
+        self.server_identity = server_identity
         self.server_destination = RNS.Destination(
             self.server_identity,
             RNS.Destination.IN,
