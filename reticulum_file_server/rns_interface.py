@@ -54,6 +54,7 @@ class RNSInterface:
             self.app_name,
             "receiver"
         )
+        self.send_periodic_announce(120)
         self.server_destination.set_link_established_callback(self.client_connected)
         # We register a request handler for handling incoming
         # requests over any established links.
@@ -75,6 +76,7 @@ class RNSInterface:
                                            )
         # register the announce handler with Reticulum this will let us know when announces arrive
         RNS.Transport.register_announce_handler(announce_handler)
+        self.start_service_loop()
 
     def client_connected(self, link: RNS.Link):
         """A Request from another peer on the network. Check their id and req. packet before forming resource"""
@@ -104,31 +106,29 @@ class RNSInterface:
         self.currently_linked = False
 
     def handle_announce(self, destination_hash, announced_identity: RNS.Identity, app_data):
-        """TODO: Handle incoming id packets sorted by what they are. Make decision on low priority requests or
-        schedule announces into the future using threads"""
         RNS.log(
             "Received an announce from " +
             RNS.prettyhexrep(destination_hash)
         )
         if app_data:
-            RNS.log(
-                "The announce contained the following app data: " +
-                app_data.decode("utf-8")
-            )
+            decoded_data = app_data.decode('utf8')
+            if self.cid_store.get_source_checksum(announced_identity.hexhash) != decoded_data[2:] or not self.cid_store.get_node_obj(announced_identity.hexhash):
+                self.make_hash_desire_request(announced_identity.hexhash)
 
     def broadcast_handler(self, data: bytes, packet: RNS.Packet):
         """Breakdown types of data broadcast and then store data or respond accordingly"""
         decomposed = breakdown_broadcast_data(data.decode('utf8'), 2, len(self.server_destination.hexhash))
         if decomposed:
             prefix, source, hash = decomposed
-            if prefix == self.REQUEST_HASH_ID.encode('utf8'):  # This is a request of data
+            print(f'p:{prefix}, s:{source}, h:{hash}')
+            if prefix == self.REQUEST_HASH_ID:  # This is a request of data
                 self.handle_hash_request(source, hash)
-            elif prefix == self.NODE_PRESENT_ID.encode('utf8'):  # This is an announcement that a resource is present
+            elif prefix == self.NODE_PRESENT_ID:  # This is an announcement that a resource is present
                 self.handle_node_present(source, hash)
-            elif prefix == self.NEW_HASH_ID.encode('utf8'):  # This is an announcement of a new node
+            elif prefix == self.NEW_HASH_ID:  # This is an announcement of a new node
                 self.handle_new_hash(source, hash)
-            elif prefix == self.CHECKSUM_ID.encode('utf8'):  # This is a checksum of a source
-                self.handle_checksum(source, hash)
+            # elif prefix == self.CHECKSUM_ID:  # This is a checksum of a source moved to announce
+            #     self.handle_checksum(source, hash)
 
     def handle_hash_request(self, source, hash):
         """see if we have the data in our stores and respond if we do"""
@@ -137,32 +137,37 @@ class RNSInterface:
         if node:  # We have the node
             if self.cid_store.check_is_stored(hash) or node.type != 3:
                 logger.info(f'RNFS: We have {hash} send response according to random chance + source')
-                source = self.cid_store.get_parent_hashes(hash)[0]
+                source = hash
+                parents = self.cid_store.get_parent_hashes(hash)
+                if parents:
+                    source = parents[0]
                 delay = 30 + random.random() * 30  # Between 30 and 60 seconds of delay
                 if source == self.cid_store.source_hash:
-                    delay = 0  # No delay if we are source
+                    delay = 5  # No delay if we are source
                 data = (self.NODE_PRESENT_ID + self.server_destination.hexhash + hash).encode('utf8')
                 self.send_future_broadcast(data, delay)
 
     def handle_node_present(self, source, hash):
         """See if we wanted the node and don't have it"""
+        print('Checking if we wanted present node(make note of who owns it)')
         if hash in self.desired_hash_translation_map:  # See if we wanted it
             sources, _, _ = self.desired_hash_translation_map[hash]
-            sources.append(source)  # Append the sources to dictionary
+            source_ident = RNS.Identity.recall(bytes.fromhex(source))
+            if source_ident:
+                sources.append(source_ident)  # Append the sources to dictionary
 
     def handle_new_hash(self, source, hash):
         """For now, always request new hashes"""
         if source in self.allowed_peers or (source not in self.banned_peers and self.allow_all):
             self.make_hash_desire_request(hash)
 
-    def handle_checksum(self, source, hash):
-        """See if the checksum is valid for the source, if not, make a desire request for the source"""
-        if self.cid_store.get_source_checksum(source) != hash:
-            self.make_hash_desire_request(source)
-
     def make_hash_desire_request(self, hash_str: str):
         """TODO: format announce to request hash presence on network move away from announces"""
-        self.server_destination.announce(app_data=(self.request_hash_id + self.server_destination.hexhash + hash_str).encode('utf8'))
+        data = (self.REQUEST_HASH_ID + self.server_destination.hexhash + hash_str).encode('utf8')
+        packet = RNS.Packet(self.broadcast_dest,
+                            data,
+                            create_receipt=False)
+        packet.send()
         if hash_str not in self.desired_hash_translation_map:
             self.desired_hash_translation_map[hash_str] = ([], 0, time.time())
             RNS.log(f'RNSFS: Requesting presence of hash in network')
@@ -182,30 +187,33 @@ class RNSInterface:
         link = RNS.Link(server_destination)
         # We'll set up functions to inform the
         # user when the link is established or closed
-        link.set_link_established_callback(self.client_disconnected)
+        link.set_link_established_callback(self.client_connected)
         link.set_link_closed_callback(self.client_disconnected)
-        while not link:
+        while not link.rtt or not link:
             time.sleep(.1)
-        receipt = link.request('RH',
-                     data=hash_str.encode('utf8'),
-                     response_callback=self.got_response_data,
-                     failed_callback=self.failed_response
-                     )
-        if receipt:
-            self.request_id_to_hash[receipt.get_request_id()] = hash_str
+        try:
+            receipt = link.request('RH',
+                         data=hash_str.encode('utf8'),
+                         response_callback=self.got_response_data,
+                         failed_callback=self.failed_response
+                         )
+            if receipt:
+                self.request_id_to_hash[receipt.get_request_id()] = hash_str
+        except:
+            print('error')
 
-    def got_response_data(self, response: RNS.RequestReceipt):
-        request_id = response.get_request_id()
+    def got_response_data(self, response_rec: RNS.RequestReceipt):
+        request_id = response_rec.get_request_id()
         hash_str = self.request_id_to_hash[request_id]
-        response = response.get_response()
-        if response:
+        response = response_rec.get_response()
+        if response:  # Add data and remove packet
             self.cid_store.add_data(hash_str, response)
             self.request_id_to_hash.pop(request_id)
-        response.link.teardown()
+            self.desired_hash_translation_map.pop(hash_str)
+        response_rec.link.teardown()
 
     def failed_response(self, response: RNS.RequestReceipt):
         RNS.log("The request " + RNS.prettyhexrep(response.request_id) + " failed.")
-        response.link.teardown()
 
     def service_desired_hash_list(self):
         """Thread to service the desired hash dictionary"""
@@ -214,14 +222,14 @@ class RNSInterface:
             while self.currently_linked:
                 time.sleep(1)
             made_request = False
-            for hash in self.desired_hash_translation_map:
+            for hash in tuple(self.desired_hash_translation_map.keys()):
                 sources, attempts, next_allowed_time = self.desired_hash_translation_map[hash]
-                if time.time() > next_allowed_time and not made_request:
+                if not made_request:
                     if sources:  # If sources have been announced request from the source
                         target_identity = sources.pop(0)
                         sources.append(target_identity)  # Move to back of line
                         self.make_hash_req(hash, target_identity)
-                    else:  # make the next desire request
+                    elif time.time() > next_allowed_time:  # make the next desire request
                         self.make_hash_desire_request(hash)
                     attempts += 1
                     next_allowed_time = time.time() + 60  # Wait a time before restarting
@@ -233,6 +241,14 @@ class RNSInterface:
         thread = Thread(target=self.delayed_broadcast, args=[data, delay], daemon=True)
         thread.start()
 
+    def send_periodic_announce(self, delay):
+        thread = Thread(target=self.announce_loop, args=[delay], daemon=True)
+        thread.start()
+
+    def start_service_loop(self):
+        thread = Thread(target=self.service_desired_hash_list, daemon=True)
+        thread.start()
+
     def delayed_broadcast(self, data:bytes, delay: float):
         """Schedule a delay into the future, use a thread for this"""
         time.sleep(delay)
@@ -240,6 +256,15 @@ class RNSInterface:
                             data,
                             create_receipt=False)
         packet.send()
+
+    def announce_loop(self, delay):
+        while True:
+            self.send_announce()
+            time.sleep(delay)
+
+    def send_announce(self):
+        self.server_destination.announce(
+            app_data=(self.CHECKSUM_ID + self.cid_store.get_source_checksum(self.cid_store.source_hash)).encode('utf8'))
 
 class AnnounceHandler:
     def __init__(self, received_announce_callback, aspect_filter=None):

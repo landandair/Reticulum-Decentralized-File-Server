@@ -1,5 +1,6 @@
 import argparse
 import os
+import time
 
 import cid_store
 from rns_interface import RNSInterface
@@ -30,7 +31,15 @@ def main(args):
     # Make main command
     server_command = server_command_state.ServerCommandState(rns_interface, store)
     try:
-        pass  # Put a waiting loop here with basic announce functionality
+        print(f'Starting server using identity of: {server_identity.hexhash}')
+        # store.add_file_node('../README.md', 'readme.md')
+        # store.add_file_node('../test/hello.txt', 'test.txt')
+        while True:
+            pass  # Put a waiting loop here with basic announce functionality
+            inp = input()
+            if inp:
+                print("Announcing")
+                rns_interface.send_announce()
     finally:
         store.save_index()  # ensure index gets saved
 

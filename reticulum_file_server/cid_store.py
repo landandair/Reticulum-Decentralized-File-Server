@@ -69,20 +69,27 @@ class CidStore:
 
     def add_data(self, hash, data: bytes):
         """Adds node data gained in response from request"""
+        print(data)
         node = self.get_node_obj(hash)
-        if node:
+        if node and self.get_parent_hashes(hash):
             source = self.get_parent_hashes(hash)
             """TODO: Make it so you can add node to index without it already being there"""
             if source[0] != self.source_hash:  # Add data only if it doesn't conflict with our data
                 if self.is_storage_hash(hash):
                     if hash == self.get_data_hash(node.parent, data, include_source=False):
+                        print(data, 'adding node')
                         self.add_node(node.name, node.parent, node.type, node.time_stamp, data, stored=True)
                     else:
                         logger.warning(
                             f"Expected data hash of {hash} but got {self.get_data_hash(node.parent, data, include_source=False)} instead.")
                 else:  # Try to decode as a json store and load the dictionary
                     data_dict = json.loads(data)
+                    print(data_dict)
                     self.add_node_dict(data_dict)
+                    print(self.index)
+        else:
+            data_dict = json.loads(data)
+            self.add_node_dict(data_dict)
 
     def add_node_dict(self, node_dict):
         """Adds node dictionary to your index. Todo: Handle all intersections between new and old nodes"""
@@ -94,7 +101,7 @@ class CidStore:
                     self.check_is_stored(cid.hash)
                     self.send_update_callback(cid.hash)
                 else:  # TODO: Check if what is in the index is older or of a more reliable source
-                    logger.warning('Received node dictionary that could not be traced to source node')
+                    logger.warning('Received node dictionary that was already in source node')
             # TODO: Mop up after node addition by removing all dereference nodes
 
     def set_update_callback(self, callback):
@@ -123,32 +130,28 @@ class CidStore:
     def add_node(self, name, parent, node_type, time_stamp=None, data_store: bytes = None, stored=False):
         """Blind node addition adding a node to the node dictionary and saving data to the store if present"""
         # ensure we have permission to write to this tree
-        parents = self.get_parent_hashes(parent)
-        parents.append(parent)
-        source = parents[0]
-        if source == self.source_hash:
-            children = []  # Empty list will be added by regressive call if needed
-            if not time_stamp:
-                time_stamp = int(time.time())
-            size = 0
-            if data_store:  # Save data to storage path along with calculating hash
-                hash_digest = self.get_data_hash(parent, data_store,
-                                                 node_type != Cid.TYPE_CHUNK)  # Check if it is a file chunk when getting hash
-                size = len(data_store)
-                stored = True
-            else:  # Not a storage node, so calculate hash based on source path
-                hash_digest = self.get_path_hash(parent)
-            self.get_node_obj(parent).children.append(hash_digest)
-            self.index[hash_digest] = Cid(hash_digest, name, time_stamp, size, parent, children, stored, node_type)
-            if size and node_type == Cid.TYPE_FILE:  # Is of type file so break into chunks
-                for i, pos in enumerate(range(0, size, self.chunk_size)):
-                    self.add_node(f'{name}.chunk_{i}', hash_digest, Cid.TYPE_CHUNK, time_stamp,
-                                  data_store[pos:pos + self.chunk_size])
-            elif size:
-                with open(self.get_data_path(hash_digest), 'wb') as f:
-                    f.write(data_store)
-            print('hash_gen', hash_digest)
-            return hash_digest
+        children = []  # Empty list will be added by regressive call if needed
+        if not time_stamp:
+            time_stamp = int(time.time())
+        size = 0
+        if data_store:  # Save data to storage path along with calculating hash
+            hash_digest = self.get_data_hash(parent, data_store,
+                                             node_type != Cid.TYPE_CHUNK)  # Check if it is a file chunk when getting hash
+            size = len(data_store)
+            stored = True
+        else:  # Not a storage node, so calculate hash based on source path
+            hash_digest = self.get_path_hash(parent)
+        self.get_node_obj(parent).children.append(hash_digest)
+        self.index[hash_digest] = Cid(hash_digest, name, time_stamp, size, parent, children, stored, node_type)
+        if size and node_type == Cid.TYPE_FILE:  # Is of type file so break into chunks
+            for i, pos in enumerate(range(0, size, self.chunk_size)):
+                self.add_node(f'{name}.chunk_{i}', hash_digest, Cid.TYPE_CHUNK, time_stamp,
+                              data_store[pos:pos + self.chunk_size])
+        elif size:
+            with open(self.get_data_path(hash_digest), 'wb') as f:
+                f.write(data_store)
+        print('hash_gen', hash_digest)
+        return hash_digest
 
     def get_data_path(self, node_hash):  # get data path
         """Returns the path where data associated with node should be stored"""
@@ -189,6 +192,7 @@ class CidStore:
         in binary. Return nothing if no data was found"""
         self.check_is_stored(hash)  # Update all storage status for nodes
         node = self.get_node_obj(hash)
+        print('Generating data for', node)
         if node:
             if node.type != Cid.TYPE_CHUNK:  # look for node information
                 info = self.get_node_information(hash)
@@ -202,11 +206,10 @@ class CidStore:
         """Blindly retrieve associated chunk data"""
         node = self.get_node_obj(hash)
         if node:
-            path = os.path.join(self.store_path, self.get_data_path(hash))
+            path = self.get_data_path(hash)
             if os.path.exists(path):
                 with open(path, 'rb') as f:
                     data = f.read()
-                print(node.hash, self.get_data_hash(node.parent, data, include_source=False))
                 if node.hash == self.get_data_hash(node.parent, data, include_source=False):
                     return data
                 else:
@@ -314,7 +317,7 @@ def cid_builder(node_dict):
 
 
 if __name__ == '__main__':
-    store = CidStore('../test_store', '12345')
+    store = CidStore('store', '12345', 'hermes')
     store.add_node_dict({'12345': {'hash': '12345', 'name': 'hermes', 'time_stamp': 123, 'size': 0, 'parent': 'root',
                                    'children': ['54321'], 'type': 0, 'is_stored': False},
                          '54321': {'hash': '54321', 'name': 'files', 'time_stamp': 123, 'size': 0,
