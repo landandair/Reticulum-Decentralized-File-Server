@@ -26,6 +26,7 @@ from cid_store import CidStore
 
 logger = getLogger(__name__)
 
+
 class RNSInterface:
     app_name = "Reticulum-File-Server"
     REQUEST_HASH_ID = "RH"  # Request hash: Request hash
@@ -96,17 +97,16 @@ class RNSInterface:
 
     def client_disconnected(self, link: RNS.Link):
         """TODO: Determine the cause of the cut adjust accordingly"""
-        print(f'{link.status}: link cut')
         if link.teardown_reason == RNS.Link.TIMEOUT:
             RNS.log("The link timed out, exiting now")
         elif link.teardown_reason == RNS.Link.DESTINATION_CLOSED:
-            RNS.log("The link was closed by the server, exiting now")
+            logger.debug("The link was closed by the server")
         else:
             RNS.log("Link closed, exiting now")
         self.currently_linked = False
 
     def handle_announce(self, destination_hash, announced_identity: RNS.Identity, app_data):
-        RNS.log(
+        logger.debug(
             "Received an announce from " +
             RNS.prettyhexrep(destination_hash)
         )
@@ -149,7 +149,7 @@ class RNSInterface:
 
     def handle_node_present(self, source, hash):
         """See if we wanted the node and don't have it"""
-        print('Checking if we wanted present node(make note of who owns it)')
+        logger.info(f'{hash}: Checking if we wanted present node(make note of who owns it)')
         if hash in self.desired_hash_translation_map:  # See if we wanted it
             sources, _, _ = self.desired_hash_translation_map[hash]
             source_ident = RNS.Identity.recall(bytes.fromhex(source))
@@ -169,7 +169,7 @@ class RNSInterface:
                             create_receipt=False)
         packet.send()
         if hash_str not in self.desired_hash_translation_map:
-            self.desired_hash_translation_map[hash_str] = ([], 0, time.time())
+            self.desired_hash_translation_map[hash_str] = ([], 0, time.time()+60)
             RNS.log(f'RNSFS: Requesting presence of hash in network')
         else:
             RNS.log('RNSFS: Already requested this hash on network')
@@ -200,7 +200,7 @@ class RNSInterface:
             if receipt:
                 self.request_id_to_hash[receipt.get_request_id()] = hash_str
         except:
-            print('error')
+            logger.warning('Error: unknown error while making request')
 
     def got_response_data(self, response_rec: RNS.RequestReceipt):
         request_id = response_rec.get_request_id()

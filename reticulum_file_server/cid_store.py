@@ -1,5 +1,4 @@
 import os
-import shutil
 from logging import getLogger
 import pickle
 import json
@@ -69,7 +68,6 @@ class CidStore:
 
     def add_data(self, hash, data: bytes):
         """Adds node data gained in response from request"""
-        print(data)
         node = self.get_node_obj(hash)
         if node and self.get_parent_hashes(hash):
             source = self.get_parent_hashes(hash)
@@ -77,16 +75,13 @@ class CidStore:
             if source[0] != self.source_hash:  # Add data only if it doesn't conflict with our data
                 if self.is_storage_hash(hash):
                     if hash == self.get_data_hash(node.parent, data, include_source=False):
-                        print(data, 'adding node')
                         self.add_node(node.name, node.parent, node.type, node.time_stamp, data, stored=True)
                     else:
                         logger.warning(
                             f"Expected data hash of {hash} but got {self.get_data_hash(node.parent, data, include_source=False)} instead.")
                 else:  # Try to decode as a json store and load the dictionary
                     data_dict = json.loads(data)
-                    print(data_dict)
                     self.add_node_dict(data_dict)
-                    print(self.index)
         else:
             data_dict = json.loads(data)
             self.add_node_dict(data_dict)
@@ -141,7 +136,8 @@ class CidStore:
             stored = True
         else:  # Not a storage node, so calculate hash based on source path
             hash_digest = self.get_path_hash(parent)
-        self.get_node_obj(parent).children.append(hash_digest)
+        if hash_digest not in self.get_node_obj(parent).children:
+            self.get_node_obj(parent).children.append(hash_digest)
         self.index[hash_digest] = Cid(hash_digest, name, time_stamp, size, parent, children, stored, node_type)
         if size and node_type == Cid.TYPE_FILE:  # Is of type file so break into chunks
             for i, pos in enumerate(range(0, size, self.chunk_size)):
@@ -150,7 +146,6 @@ class CidStore:
         elif size:
             with open(self.get_data_path(hash_digest), 'wb') as f:
                 f.write(data_store)
-        print('hash_gen', hash_digest)
         return hash_digest
 
     def get_data_path(self, node_hash):  # get data path
@@ -192,7 +187,7 @@ class CidStore:
         in binary. Return nothing if no data was found"""
         self.check_is_stored(hash)  # Update all storage status for nodes
         node = self.get_node_obj(hash)
-        print('Generating data for', node)
+        logger.info(f'Generating data for: {node}')
         if node:
             if node.type != Cid.TYPE_CHUNK:  # look for node information
                 info = self.get_node_information(hash)
@@ -335,3 +330,7 @@ if __name__ == '__main__':
     for hash in file_data[f_hash]['children']:
         print(store.get_node(hash))
     store.save_index()
+    store2 = CidStore('store_2', '123456', 'hermes2')
+    store2.add_node_dict(json.loads(store.get_node('12345')))
+    print(store2.get_node('12345'))
+    print(store.get_node('12345'))

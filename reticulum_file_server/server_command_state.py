@@ -1,7 +1,10 @@
 from collections import deque
+from logging import getLogger
 
 from rns_interface import RNSInterface
 from cid_store import CidStore
+
+logger = getLogger(__name__)
 
 class ServerCommandState:
     def __init__(self, rns_interface:RNSInterface, cid_store:CidStore, max_file_size=-1):
@@ -25,8 +28,8 @@ class ServerCommandState:
         """Called when the cid storage has added any nodes from a dictionary(json file)"""
         node = self.cid_store.get_node_obj(node_hash)
         if node.type == node.TYPE_CHUNK or node.type == node.TYPE_FILE:  # Check if it is a file
-            print(node.size, self.max_file_size)
+            logger.debug(f'learned about new file node of Size-{node.size}')
             if node.size < self.max_file_size or self.max_file_size == -1:  # Check if it is within size limits
                 if not self.cid_store.check_is_stored(node.hash):  # Check if it is already stored
-                    print(f"RNFS Manager: Automatically requesting {node_hash}")
+                    logger.info(f"RNFS Manager: Automatically requesting {node_hash}")
                     self.rns_interface.make_hash_desire_request(node_hash)
