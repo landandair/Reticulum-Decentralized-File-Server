@@ -30,7 +30,7 @@ class CidStore:
                 self.index = pickle.load(f)
         node = self.get_node_obj(self.source_hash)
         if not node:
-            self.index[self.source_hash] = Cid(self.source_hash, self.source_name, time.time(), 0, 'root', [], True, Cid.TYPE_SRC)
+            self.index[self.source_hash] = Cid(self.source_hash, self.source_name, int(time.time()), 0, 'root', [], True, Cid.TYPE_SRC)
         else:
             node.name = self.source_name
 
@@ -51,6 +51,8 @@ class CidStore:
         if node:
             if node.type != Cid.TYPE_CHUNK:  # Check all children present if not chunk
                 stored = True
+                if not node.children and node.type == Cid.TYPE_FILE:  # File is missing chunks so is not stored
+                    stored = False
                 for child in node.children:
                     child_stored = self.check_is_stored(child)
                     if not child_stored:  # if any children are false the node isnt stored
@@ -106,7 +108,7 @@ class CidStore:
         if self.callback:
             self.callback(updated_hash)
 
-    def add_file_node(self, data_path, name=None, parent=None):
+    def add_file_path(self, data_path, name=None, parent=None):
         """Add file node to the data store. Ensure that checks have already been done to ensure that none of your
         own files are being replaced."""
         node_type = Cid.TYPE_FILE  # File store
@@ -121,6 +123,23 @@ class CidStore:
         with open(data_path, 'rb') as f:
             data = f.read()
         return self.add_node(name, parent, node_type, None, data)
+
+    def add_file(self, file_name, data, parent=None):
+        if not parent:
+            parent = self.source_hash
+        parent_node = self.get_node_obj(parent)
+        if parent_node:
+            parent_type = parent_node.type
+            if parent_type == Cid.TYPE_FILE or parent_type == Cid.TYPE_CHUNK:  # Invalid because file cannot be child of file or file chunk
+                logger.warning("Cannot add file node: parent of node cannot be a file or file chunk")
+                return False  # Return early false for error
+            if self.source_hash not in self.get_parent_hashes(parent) and self.source_hash != parent:
+                logger.warning(f"Cannot add file node: Source node not a parent of '{parent}'")
+                return False  # Return early false for error
+            return self.add_node(file_name, parent, Cid.TYPE_FILE, None, data)
+        else:
+            logger.warning("Cannot add file node: Parent node not found")
+            return False  # Return early false for error
 
     def add_node(self, name, parent, node_type, time_stamp=None, data_store: bytes = None, stored=False):
         """Blind node addition adding a node to the node dictionary and saving data to the store if present"""

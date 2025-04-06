@@ -14,10 +14,12 @@ logger = logging.getLogger(__name__)
 def main(args):
     store_path = args.path
     max_size = args.max_file_size
+    api_host = args.hostname
+    api_port = args.port
+    server_name = args.name
     # Cid_store_args
     if not os.path.exists(store_path):
         os.mkdir(store_path)
-    server_name = 'test'
 
     # Reticulum interface args
     config_path = None
@@ -48,11 +50,12 @@ def main(args):
     # Make rns interface
     rns_interface = RNSInterface(store, server_identity, allow_all=True)
     # Make main command
-    server_command = server_command_state.ServerCommandState(rns_interface, store, max_size)
+    server_command = server_command_state.ServerCommandState(rns_interface, store, api_host, api_port,
+                                                             max_file_size=max_size)
+    for i in store.index:
+        print(store.index[i])
     try:
         logger.info(f'Starting server using identity of: {server_identity.hexhash}')
-        # store.add_file_node('../README.md', 'readme.md')
-        # store.add_file_node('../test/hello.txt', 'test.txt')
         while True:
             pass  # Put a waiting loop here with basic announce functionality
             inp = input()
@@ -69,6 +72,9 @@ if __name__ == '__main__':
     parser.add_argument('-m', '--max_file_size', default=5000, type=int, help='max size of files automatically '
                                                                               'accepted in bytes')
     parser.add_argument('-c', '--config_path', default=None, type=str, help='Path to RNS config')
+    parser.add_argument('--port', default=8000, type=int, help='port number for api')
+    parser.add_argument('--hostname', default='', type=str, help='ip to bind api to')
     parser.add_argument('name', type=str, help='Nickname of server')
+
     args = parser.parse_args()
     main(args)
