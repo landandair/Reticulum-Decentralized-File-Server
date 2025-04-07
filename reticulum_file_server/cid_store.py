@@ -141,6 +141,24 @@ class CidStore:
             logger.warning("Cannot add file node: Parent node not found")
             return False  # Return early false for error
 
+    def add_dir(self, name, parent=None):
+        if not parent:
+            parent = self.source_hash
+        parent_node = self.get_node_obj(parent)
+        if parent_node:
+            parent_type = parent_node.type
+            if parent_type == Cid.TYPE_FILE or parent_type == Cid.TYPE_CHUNK:  # Invalid because file cannot be child of file or file chunk
+                logger.warning("Cannot add file node: parent of node cannot be a file or file chunk")
+                return False  # Return early false for error
+            if self.source_hash not in self.get_parent_hashes(parent) and self.source_hash != parent:
+                logger.warning(f"Cannot add file node: Source node not a parent of '{parent}'")
+                return False  # Return early false for error
+            return self.add_node(name, parent, Cid.TYPE_DIR, None, None)
+        else:
+            logger.warning("Cannot add file node: Parent node not found")
+            return False  # Return early false for error
+
+
     def add_node(self, name, parent, node_type, time_stamp=None, data_store: bytes = None, stored=False):
         """Blind node addition adding a node to the node dictionary and saving data to the store if present"""
         # ensure we have permission to write to this tree
@@ -204,6 +222,8 @@ class CidStore:
     def get_node(self, hash):
         """Get data associated with node either its information about its children, or the file chunk itself packaged
         in binary. Return nothing if no data was found"""
+        if not hash:
+            return json.dumps(self.get_sources())
         self.check_is_stored(hash)  # Update all storage status for nodes
         node = self.get_node_obj(hash)
         logger.info(f'Generating data for: {node}')
@@ -242,6 +262,17 @@ class CidStore:
                     if child_hash not in node_dict:  # Ensure we don't enter a loop of references or repeat references
                         child_dict = self.get_node_information(child_hash, initial_req=False)
                         node_dict.update(child_dict)
+        return node_dict
+
+    def get_sources(self):
+        """Send list of sources to directory"""
+        node_dict = {}
+        for hash in self.index:
+            node = self.get_node_obj(hash)
+            if node:
+                if node.type == Cid.TYPE_SRC:
+                    node_dict[hash] = node.dump()
+        print(node_dict)
         return node_dict
 
     def is_storage_hash(self, hash_str):

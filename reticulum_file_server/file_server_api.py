@@ -11,12 +11,13 @@ class RNFSView(FlaskView):
         return "<h1>Reticulum File Server API: Running</h1>"
 
     def get_node(self, id):
-        if self.info:
-            return self.info.get_node_info(id)
+        if id == 'root':
+            id = None
+        return self.info.get_node_info(id)
 
     @route('/uploadData', methods=['GET', 'POST'], endpoint='uploadData')
     def upload_data(self):
-        """Get a file from destination add it to data chain"""
+        """Get a file from destination add it to data store"""
         if request.method == 'POST':
             # check if the post request has the file part
             if 'file' not in request.files:
@@ -43,6 +44,32 @@ class RNFSView(FlaskView):
               <input type=submit value=Upload>
             </form>
             '''  # Html for making basic file upload
+
+    @route('/mkdir', methods=['GET', 'POST'], endpoint='mkdir')
+    def make_directory(self):
+        """make a new folder node in data store"""
+        if request.method == 'POST':
+            name = request.form['name']
+            parent = request.form['parent']
+            # if user does not select file, browser also
+            # submit an empty part without filename
+            if not name:
+                flask.flash('No name provided')
+                return flask.redirect(request.url)
+            else:
+                self.info.make_dir(name, parent)
+                return flask.redirect(flask.url_for('mkdir'))
+        return '''
+            <!doctype html>
+            <title>Make new Folder</title>
+            <h1>Add Name and parent node</h1>
+            <form method=post enctype=multipart/form-data>
+              <input type=text name=name>
+              <input type=text name=parent>
+              <input type=submit value=Upload>
+            </form>
+            '''  # Html for making basic file upload
+
 
 
 def start_server_thread(server_info):

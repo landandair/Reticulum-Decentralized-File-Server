@@ -38,6 +38,9 @@ class ServerCommandState:
     def upload_file(self, file_name, file_data, parent=None):
         self.cid_store.add_file(file_name, file_data, parent)
 
+    def make_dir(self, name, parent=None):
+        self.cid_store.add_dir(name, parent)
+
     def updated_hash_callback(self, node_hash):
         """Called when the cid storage has added any nodes from a dictionary(json file)"""
         node = self.cid_store.get_node_obj(node_hash)
