@@ -8,12 +8,32 @@ class RNFSView(FlaskView):
         self.info = server_info
 
     def index(self):
-        return "<h1>Reticulum File Server API: Running</h1>"
+        return ('''<h1>Reticulum File Server API: Running</h1>
+        
+                ''')
 
-    def get_node(self, id):
+    @route("/site-map")
+    def site_map(self):
+        links = []
+        # for rule in .url_map.iter_rules():
+        #     # Filter out rules we can't navigate to in a browser
+        #     # and rules that require parameters
+        #     if "GET" in rule.methods and has_no_empty_params(rule):
+        #         url = url_for(rule.endpoint, **(rule.defaults or {}))
+        #         links.append((url, rule.endpoint))
+
+    @route('/getNode/<id>', methods=['GET'], endpoint='getNode')
+    def get_node(self, id=None):
+        """Return node information associated with hash provided TODO:Make this a file download if the data is not json"""
         if id == 'root':
             id = None
+        print(id)
         return self.info.get_node_info(id)
+
+    @route('/getSrc', methods=['GET'], endpoint='getSrc')
+    def get_src(self):
+        """Get source dest hash useful for knowing which data tree you can add to"""
+        return self.info.get_src_dest()
 
     @route('/uploadData', methods=['GET', 'POST'], endpoint='uploadData')
     def upload_data(self):
@@ -69,7 +89,6 @@ class RNFSView(FlaskView):
               <input type=submit value=Upload>
             </form>
             '''  # Html for making basic file upload
-
 
 
 def start_server_thread(server_info):

@@ -1,6 +1,7 @@
 import argparse
 import os
 import logging
+import sys
 from logging.handlers import RotatingFileHandler
 
 import cid_store
@@ -17,6 +18,8 @@ def main(args):
     api_host = args.hostname
     api_port = args.port
     server_name = args.name
+    allow_all = args.allowAll
+    allowed_peers_path = args.allowedPeers
     # Cid_store_args
     if not os.path.exists(store_path):
         os.mkdir(store_path)
@@ -32,6 +35,13 @@ def main(args):
         RNS.log("No valid saved identity found, creating new...", RNS.LOG_INFO)
         server_identity = RNS.Identity()
         server_identity.to_file(identity_path)
+    server_destination = RNS.Destination(
+        server_identity,
+        RNS.Destination.IN,
+        RNS.Destination.SINGLE,
+        RNSInterface.app_name,
+        "receiver"
+    )
 
     # Set up logger
     log_path = os.path.join(store_path, 'rnfs.log')
@@ -42,20 +52,20 @@ def main(args):
                 datefmt="%y-%m-%d %H:%M:%S",
                 handlers=[
                     my_handler,
-                    logging.StreamHandler()
+                    logging.StreamHandler(stream=sys.stdout)
                 ])
 
     # Make cid_store
-    store = cid_store.CidStore(store_path, server_identity.hexhash, server_name)
+    store = cid_store.CidStore(store_path, server_destination.hexhash, server_name)
     # Make rns interface
-    rns_interface = RNSInterface(store, server_identity, allow_all=True)
+    rns_interface = RNSInterface(store, server_destination, allowed_peers_path, allow_all=allow_all)
     # Make main command
     server_command = server_command_state.ServerCommandState(rns_interface, store, api_host, api_port,
                                                              max_file_size=max_size)
     for i in store.index:
         print(store.index[i])
     try:
-        logger.info(f'Starting server using identity of: {server_identity.hexhash}')
+        logger.info(f'Starting server using identity of: {server_destination.hexhash}')
         while True:
             pass  # Put a waiting loop here with basic announce functionality
             inp = input()
@@ -74,6 +84,9 @@ if __name__ == '__main__':
     parser.add_argument('-c', '--config_path', default=None, type=str, help='Path to RNS config')
     parser.add_argument('--port', default=8000, type=int, help='port number for api')
     parser.add_argument('--hostname', default='', type=str, help='ip to bind api to')
+    parser.add_argument('--allowAll', action='store_true', help='Allow all destinations to join server('
+                                                                            'Keep in mind the risks involved)')
+    parser.add_argument('-a', '--allowedPeers',  default=None, type=str, help='File path to list of allowed peers')
     parser.add_argument('name', type=str, help='Nickname of server')
 
     args = parser.parse_args()

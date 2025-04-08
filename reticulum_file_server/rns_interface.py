@@ -17,6 +17,7 @@ Periodic Checksum: Used for maintaining consistency across server instances ensu
 1. Announce(CS): Check sum of destination source index(sort supplied hashes combine them and calculate hash)
 2. Announce(RH): Requestor(s) requests hash of the destination and updates index accordingly
 """
+import os.path
 import time
 from threading import Thread
 import random
@@ -34,27 +35,19 @@ class RNSInterface:
     NEW_HASH_ID = "NH"  # New node hash present: non-file-segment node information
     CHECKSUM_ID = "CS"  # Checksum of whole destination index check against local copy
 
-    def __init__(self, cid_store: CidStore, server_identity: RNS.Identity, allow_all=False):
+    def __init__(self, cid_store: CidStore, server_destination: RNS.Destination, allowed_dest_path: str, allow_all=False):
         self.hash_requests = []  # List of hashes requested from network
         self.cid_store = cid_store  # Store of data
         self.currently_linked = False  # Maintain whether we are currently connected to a peer Used to limit incoming
         # and outgoing requests
-        self.allowed_peers = []  # Always allowed peers who we will host files from
         self.allow_all = allow_all
-        self.banned_peers = []  # Never allowed peers who we will deny hosting files or requests from
+        self.allowed_peers = self.load_allowed_peers(allowed_dest_path)  # allowed peers who we will host files from
         # hash translation map list of requested hashes and a list of identities who can provide it
         self.desired_hash_translation_map = {}
         self.request_id_to_hash = {}
         self.max_allowed_attempts = 5
 
-        self.server_identity = server_identity
-        self.server_destination = RNS.Destination(
-            self.server_identity,
-            RNS.Destination.IN,
-            RNS.Destination.SINGLE,
-            self.app_name,
-            "receiver"
-        )
+        self.server_destination = server_destination
         self.send_periodic_announce(120)
         self.server_destination.set_link_established_callback(self.client_connected)
         # We register a request handler for handling incoming
@@ -78,6 +71,17 @@ class RNSInterface:
         # register the announce handler with Reticulum this will let us know when announces arrive
         RNS.Transport.register_announce_handler(announce_handler)
         self.start_service_loop()
+
+    def load_allowed_peers(self, path):
+        allowed_dest = []
+        if path or not self.allow_all:
+            if os.path.exists(path):
+                with open(path) as f:
+                    for line in f:
+                        allowed_dest.append(line.strip())
+            else:
+                logger.warning(f"Could not load allowed peers from {path}")
+        return allowed_dest
 
     def client_connected(self, link: RNS.Link):
         """A Request from another peer on the network. Check their id and req. packet before forming resource"""
@@ -110,17 +114,17 @@ class RNSInterface:
             "Received an announce from " +
             RNS.prettyhexrep(destination_hash)
         )
-        if app_data:
+        if app_data and (destination_hash.hex() in self.allowed_peers or self.allow_all):
             decoded_data = app_data.decode('utf8')
-            if self.cid_store.get_source_checksum(announced_identity.hexhash) != decoded_data[2:] or not self.cid_store.get_node_obj(announced_identity.hexhash):
-                self.make_hash_desire_request(announced_identity.hexhash)
+            print(self.cid_store.get_source_checksum(destination_hash.hex()), decoded_data[2:], self.cid_store.get_node_obj(destination_hash.hex()))
+            if self.cid_store.get_source_checksum(destination_hash.hex()) != decoded_data[2:] or not self.cid_store.get_node_obj(destination_hash.hex()):
+                self.make_hash_desire_request(destination_hash.hex())
 
     def broadcast_handler(self, data: bytes, packet: RNS.Packet):
         """Breakdown types of data broadcast and then store data or respond accordingly"""
         decomposed = breakdown_broadcast_data(data.decode('utf8'), 2, len(self.server_destination.hexhash))
         if decomposed:
             prefix, source, hash = decomposed
-            print(f'p:{prefix}, s:{source}, h:{hash}')
             if prefix == self.REQUEST_HASH_ID:  # This is a request of data
                 self.handle_hash_request(source, hash)
             elif prefix == self.NODE_PRESENT_ID:  # This is an announcement that a resource is present
@@ -134,7 +138,7 @@ class RNSInterface:
         """see if we have the data in our stores and respond if we do"""
         logger.info(f'RNFS: {source} requested {hash} from network')
         node = self.cid_store.get_node_obj(hash)
-        if node:  # We have the node
+        if node and (source in self.allowed_peers or self.allow_all):  # We have the node
             if self.cid_store.check_is_stored(hash) or node.type != 3:
                 logger.info(f'RNFS: We have {hash} send response according to random chance + source')
                 source = hash
@@ -149,8 +153,8 @@ class RNSInterface:
 
     def handle_node_present(self, source, hash):
         """See if we wanted the node and don't have it"""
-        logger.info(f'{hash}: Checking if we wanted present node(make note of who owns it)')
-        if hash in self.desired_hash_translation_map:  # See if we wanted it
+        logger.debug(f'{hash}: Checking if we wanted present node(make note of who owns it)')
+        if hash in self.desired_hash_translation_map and (source in self.allowed_peers or self.allow_all):  # See if we wanted it
             sources, _, _ = self.desired_hash_translation_map[hash]
             source_ident = RNS.Identity.recall(bytes.fromhex(source))
             if source_ident:
@@ -158,7 +162,7 @@ class RNSInterface:
 
     def handle_new_hash(self, source, hash):
         """For now, always request new hashes"""
-        if source in self.allowed_peers or (source not in self.banned_peers and self.allow_all):
+        if source in self.allowed_peers or self.allow_all:
             self.make_hash_desire_request(hash)
 
     def make_hash_desire_request(self, hash_str: str):

@@ -35,6 +35,9 @@ class ServerCommandState:
             info = dumps({})
         return info
 
+    def get_src_dest(self):
+        return self.cid_store.source_hash
+
     def upload_file(self, file_name, file_data, parent=None):
         self.cid_store.add_file(file_name, file_data, parent)
 
