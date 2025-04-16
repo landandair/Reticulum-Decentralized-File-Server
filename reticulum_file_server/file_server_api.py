@@ -37,7 +37,7 @@ class RNFSView(FlaskView):
         if data:
             bytes_io = io.BytesIO(data)
             return flask.send_file(bytes_io, download_name=self.info.get_node_name(id), as_attachment=True)
-        return data
+        return "None"
 
     @route('/getSrc', methods=['GET'], endpoint='getSrc')
     def get_src(self):

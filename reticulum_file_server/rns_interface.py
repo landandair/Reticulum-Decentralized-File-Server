@@ -139,7 +139,7 @@ class RNSInterface:
         logger.info(f'RNFS: {source} requested {hash} from network')
         node = self.cid_store.get_node_obj(hash)
         if node and (source in self.allowed_peers or self.allow_all):  # We have the node
-            if self.cid_store.check_is_stored(hash) or node.type != 3:
+            if self.cid_store.check_is_stored(hash) or node.type != node.TYPE_CHUNK:
                 logger.info(f'RNFS: We have {hash} send response according to random chance + source')
                 source = hash
                 parents = self.cid_store.get_parent_hashes(hash)
