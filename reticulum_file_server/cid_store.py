@@ -74,16 +74,16 @@ class CidStore:
         if node and self.get_parent_hashes(hash):
             source = self.get_parent_hashes(hash)
             """TODO: Make it so you can add node to index without it already being there"""
-            if source[0] != self.source_hash:  # Add data only if it doesn't conflict with our data
-                if self.is_storage_hash(hash):
-                    if hash == self.get_data_hash(node.parent, data, include_source=False):
-                        self.add_node(node.name, node.parent, node.type, node.time_stamp, data, stored=True)
-                    else:
-                        logger.warning(
-                            f"Expected data hash of {hash} but got {self.get_data_hash(node.parent, data, include_source=False)} instead.")
-                else:  # Try to decode as a json store and load the dictionary
-                    data_dict = json.loads(data)
-                    self.add_node_dict(data_dict)
+            # Add data only if it doesn't conflict with our data
+            if self.is_storage_hash(hash):
+                if hash == self.get_data_hash(node.parent, data, include_source=False):
+                    self.add_node(node.name, node.parent, node.type, node.time_stamp, data, stored=True)
+                else:
+                    logger.warning(
+                        f"Expected data hash of {hash} but got {self.get_data_hash(node.parent, data, include_source=False)} instead.")
+            elif source[0] != self.source_hash:  # Try to decode as a json store and load the dictionary
+                data_dict = json.loads(data)
+                self.add_node_dict(data_dict)
         else:
             data_dict = json.loads(data)
             self.add_node_dict(data_dict)
@@ -296,15 +296,15 @@ class CidStore:
             logger.warning('Could not get parent hash, parent was not in index')
         return parent_hashes
 
-    def get_children(self, node_hash):
+    def get_children(self, node_hash, include_chunks=False):
         """Gets all children associated with node"""
         child_hashes = []
         node = self.get_node_obj(node_hash)
         if node:
-            if node.type != Cid.TYPE_FILE:  # exclude chunks as children
+            if node.type != Cid.TYPE_FILE or include_chunks:  # exclude chunks as children
                 for c in node.children:
                     child_hashes.append(c)
-                    child_children = self.get_children(c)
+                    child_children = self.get_children(c, include_chunks=include_chunks)
                     child_hashes.extend(child_children)
         return child_hashes
 
@@ -339,7 +339,7 @@ class CidStore:
         node = self.get_node_obj(hash_id)
         if node:
             if node.parent not in self.index:
-                for child in self.get_children(hash_id):
+                for child in self.get_children(hash_id, include_chunks=True):
                     self.clean_hash_data(child)
                 self.remove_hash(hash_id)
 

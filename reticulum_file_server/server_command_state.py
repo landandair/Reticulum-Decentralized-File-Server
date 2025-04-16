@@ -48,6 +48,10 @@ class ServerCommandState:
                     return data
                 else:
                     logger.warning(f"File hash for {node.name} does not match data")
+        elif node:
+            for child in self.cid_store.get_children(node_hash, include_chunks=True):
+                if not self.cid_store.check_is_stored(child):
+                    self.rns_interface.make_hash_desire_request(child)
         else:
             self.rns_interface.make_hash_desire_request(node_hash)
         return None
