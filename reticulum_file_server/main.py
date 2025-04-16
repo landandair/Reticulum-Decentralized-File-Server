@@ -20,12 +20,13 @@ def main(args):
     server_name = args.name
     allow_all = args.allowAll
     allowed_peers_path = args.allowedPeers
+    config_path = args.config_path
+
     # Cid_store_args
     if not os.path.exists(store_path):
         os.mkdir(store_path)
 
     # Reticulum interface args
-    config_path = None
     reticulum = RNS.Reticulum(config_path)
     identity_path = os.path.join(store_path, 'rns_identity.id')  # TODO: Change this to point to rns location
     server_identity = None
