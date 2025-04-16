@@ -272,10 +272,10 @@ class CidStore:
             if node:
                 if node.type == Cid.TYPE_SRC:
                     node_dict[hash] = node.dump()
-        print(node_dict)
         return node_dict
 
     def is_storage_hash(self, hash_str):
+        """Checks to see if its a chunk hash"""
         node = self.get_node_obj(hash_str)
         if node:
             if node.type == Cid.TYPE_CHUNK:
@@ -297,6 +297,7 @@ class CidStore:
         return parent_hashes
 
     def get_children(self, node_hash):
+        """Gets all children associated with node"""
         child_hashes = []
         node = self.get_node_obj(node_hash)
         if node:
@@ -312,6 +313,35 @@ class CidStore:
         children_data = str(sorted(children)).encode('utf8')
         data_hash = self.get_data_hash(b'', children_data, include_source=False)
         return data_hash
+
+    def remove_hash(self, hash_id):
+        node = self.get_node_obj(hash_id)
+        if node:
+            if node.type != node.TYPE_SRC:
+                self.index.pop(hash_id)
+                self.clean_data()
+                return True
+            else:
+                logger.warning("User attempted to delete root node")
+        return False
+
+    def clean_data(self):
+        for hash_id in tuple(self.index.keys()):
+            node = self.get_node_obj(hash_id)
+            if node:
+                if node.parent not in self.index and node.type != node.TYPE_SRC:
+                    if node.type == node.TYPE_CHUNK:
+                        path = self.get_data_path(hash_id)
+                        os.remove(path)
+                    self.remove_hash(hash_id)
+
+    def clean_hash_data(self, hash_id):
+        node = self.get_node_obj(hash_id)
+        if node:
+            if node.parent not in self.index:
+                for child in self.get_children(hash_id):
+                    self.clean_hash_data(child)
+                self.remove_hash(hash_id)
 
 
 @dataclass

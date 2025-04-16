@@ -35,6 +35,28 @@ class ServerCommandState:
             info = dumps({})
         return info
 
+    def get_file_data(self, node_hash):
+        node = self.cid_store.get_node_obj(node_hash)
+        if node and self.cid_store.check_is_stored(node_hash):
+            if node.type == node.TYPE_FILE:
+                data = b''
+                for child in node.children:
+                    data_chunk = self.cid_store.get_node(child)
+                    if data_chunk:
+                        data += data_chunk
+                if node.hash == self.cid_store.get_data_hash(node.parent, data, include_source=True):
+                    return data
+                else:
+                    logger.warning(f"File hash for {node.name} does not match data")
+        else:
+            self.rns_interface.make_hash_desire_request(node_hash)
+        return None
+
+    def get_node_name(self, node_hash):
+        node = self.cid_store.get_node_obj(node_hash)
+        if node:
+            return node.name
+
     def get_src_dest(self):
         return self.cid_store.source_hash
 
@@ -43,6 +65,9 @@ class ServerCommandState:
 
     def make_dir(self, name, parent=None):
         self.cid_store.add_dir(name, parent)
+
+    def delete_node(self, id):
+        return self.cid_store.remove_hash(id)
 
     def updated_hash_callback(self, node_hash):
         """Called when the cid storage has added any nodes from a dictionary(json file)"""

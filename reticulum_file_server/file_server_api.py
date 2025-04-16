@@ -1,4 +1,5 @@
 from threading import Thread
+import io
 
 import flask
 from flask_classful import FlaskView, request, route
@@ -24,11 +25,19 @@ class RNFSView(FlaskView):
 
     @route('/getNode/<id>', methods=['GET'], endpoint='getNode')
     def get_node(self, id=None):
-        """Return node information associated with hash provided TODO:Make this a file download if the data is not json"""
+        """Return node information associated with hash provided"""
         if id == 'root':
             id = None
-        print(id)
         return self.info.get_node_info(id)
+
+    @route('/getFile/<id>', methods=['GET'], endpoint='getFile')
+    def get_file(self, id):
+        """Get file node and return the associated data and name"""
+        data = self.info.get_file_data(id)
+        if data:
+            bytes_io = io.BytesIO(data)
+            return flask.send_file(bytes_io, download_name=self.info.get_node_name(id), as_attachment=True)
+        return data
 
     @route('/getSrc', methods=['GET'], endpoint='getSrc')
     def get_src(self):
@@ -89,6 +98,15 @@ class RNFSView(FlaskView):
               <input type=submit value=Upload>
             </form>
             '''  # Html for making basic file upload
+
+    @route('/deleteNode/<id>', methods=['GET'], endpoint='deleteNode')
+    def remove_node(self, id):
+        """Remove a node hash from the data store"""
+        ret = self.info.delete_node(id)
+        if ret:
+            return 'success'
+        else:
+            return 'Not Found'
 
 
 def start_server_thread(server_info):
