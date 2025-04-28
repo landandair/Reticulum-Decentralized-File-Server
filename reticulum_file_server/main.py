@@ -87,7 +87,7 @@ if __name__ == '__main__':
     parser.add_argument('--hostname', default='', type=str, help='ip to bind api to')
     parser.add_argument('--allowAll', action='store_true', help='Allow all destinations to join server('
                                                                             'Keep in mind the risks involved)')
-    parser.add_argument('-a', '--allowedPeers',  default=None, type=str, help='File path to list of allowed peers')
+    parser.add_argument('-a', '--allowedPeers',  default='', type=str, help='File path to list of allowed peers')
     parser.add_argument('name', type=str, help='Nickname of server')
 
     args = parser.parse_args()
