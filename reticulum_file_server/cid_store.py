@@ -100,6 +100,7 @@ class CidStore:
                 else:  # TODO: Check if what is in the index is older or of a more reliable source
                     logger.warning('Received node dictionary that was already in source node')
             # TODO: Mop up after node addition by removing all dereference nodes
+        self.save_index() # Save index after modifying it
 
     def set_update_callback(self, callback):
         self.callback = callback
@@ -196,6 +197,7 @@ class CidStore:
                 os.mkdir(path)
             path = os.path.join(path, node.hash)
             return path
+        return None
 
     def get_path_hash(self, parent_hash):
         """Get hash associated with path to current hash to the source node"""
@@ -218,6 +220,7 @@ class CidStore:
     def get_node_obj(self, hash):
         if hash in self.index:
             return self.index[hash]
+        return None
 
     def get_node(self, hash):
         """Get data associated with node either its information about its children, or the file chunk itself packaged
@@ -232,9 +235,11 @@ class CidStore:
                 info = self.get_node_information(hash)
                 if len(info) >= 1:
                     return json.dumps(info)  # Return json encoded data
+                return None
             else:  # Look for data chunk to return
                 data = self.get_data(hash)
                 return data
+        return None
 
     def get_data(self, hash):
         """Blindly retrieve associated chunk data"""
@@ -248,8 +253,11 @@ class CidStore:
                     return data
                 else:
                     logger.warning(f'Data stored in {node.hash} did not match hash')
+                    return None
             else:
                 node.is_stored = False
+                return None
+        return None
 
     def get_node_information(self, hash, initial_req=True):
         """Returns a dict of all node information below hash in tree"""
@@ -280,8 +288,7 @@ class CidStore:
         if node:
             if node.type == Cid.TYPE_CHUNK:
                 return True
-        else:
-            return False
+        return False
 
     def get_parent_hashes(self, node_hash):
         """Returns a list of parent hashes starting at source"""

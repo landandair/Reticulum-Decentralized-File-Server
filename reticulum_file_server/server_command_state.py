@@ -60,18 +60,23 @@ class ServerCommandState:
         node = self.cid_store.get_node_obj(node_hash)
         if node:
             return node.name
+        return ""
 
     def get_src_dest(self):
         return self.cid_store.source_hash
 
     def upload_file(self, file_name, file_data, parent=None):
         self.cid_store.add_file(file_name, file_data, parent)
+        self.cid_store.save_index()
 
     def make_dir(self, name, parent=None):
         self.cid_store.add_dir(name, parent)
+        self.cid_store.save_index()
 
     def delete_node(self, id):
-        return self.cid_store.remove_hash(id)
+        ret = self.cid_store.remove_hash(id)
+        self.cid_store.save_index()
+        return ret
 
     def updated_hash_callback(self, node_hash):
         """Called when the cid storage has added any nodes from a dictionary(json file)"""
