@@ -13,8 +13,6 @@ class ServerCommandState:
         self.rns_interface = rns_interface
         self.cid_store = cid_store
         self.cid_store.set_update_callback(callback=self.updated_hash_callback)
-        self.primary_req_queue = deque()
-        self.auto_req_queue = deque()
         self.max_file_size = max_file_size
         self.api_ip = host
         self.api_port = port
@@ -23,10 +21,9 @@ class ServerCommandState:
     def get_address(self):
         return self.api_ip, self.api_port
 
-    def should_auto_req(self, new_hash):
-        """TODO: Add a filter to only request hash on network if the metadata meets certain criteria(only use on files and
-        data chunks)"""
-        self.auto_req_queue.append(new_hash)
+    def get_status(self):
+        """Get the queue of the file server and summarize the results"""
+        return self.rns_interface.get_status()
 
     def get_node_info(self, node_hash):
         """Get node data associated to info"""

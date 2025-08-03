@@ -13,15 +13,10 @@ class RNFSView(FlaskView):
         
                 ''')
 
-    @route("/site-map")
-    def site_map(self):
-        links = []
-        # for rule in .url_map.iter_rules():
-        #     # Filter out rules we can't navigate to in a browser
-        #     # and rules that require parameters
-        #     if "GET" in rule.methods and has_no_empty_params(rule):
-        #         url = url_for(rule.endpoint, **(rule.defaults or {}))
-        #         links.append((url, rule.endpoint))
+    @route("/getStatus", methods=['GET'], endpoint='getStatus')
+    def get_status(self):
+        """Return status/queue of the file server for insight into what its doing"""
+        return self.info.get_status()
 
     @route('/getNode/<id>', methods=['GET'], endpoint='getNode')
     def get_node(self, id=None):
@@ -50,7 +45,6 @@ class RNFSView(FlaskView):
         if request.method == 'POST':
             # check if the post request has the file part
             if 'file' not in request.files:
-                flask.flash('No file part')
                 return flask.redirect(request.url)
             file = request.files['file']
             parent = request.form['parent']
