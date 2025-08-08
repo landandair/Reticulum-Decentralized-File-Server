@@ -1,5 +1,6 @@
 from threading import Thread
 import io
+import base64
 
 import flask
 from flask_classful import FlaskView, request, route
@@ -54,7 +55,11 @@ class RNFSView(FlaskView):
                 flask.flash('No selected file')
                 return flask.redirect(request.url)
             if file:
-                self.info.upload_file(file.filename, file.stream.read(), parent)
+                encoding = file.headers.get('Content-Transfer-Encoding')
+                body = file.stream.read()
+                if encoding == 'base64':
+                    body = base64.b64decode(body)
+                self.info.upload_file(file.filename, body, parent)
                 return flask.redirect(flask.url_for('uploadData',
                                         filename=file.filename))
         return '''

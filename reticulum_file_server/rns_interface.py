@@ -80,7 +80,9 @@ class RNSInterface:
             progress = 0
             if node_hash in self.hash_progress:
                 progress = self.hash_progress[node_hash]
+            node_obj = self.cid_store.get_node_obj(node_hash)
             status[node_hash] = {
+                'name': node_obj.name,
                 'progress': progress,
                 'sources': sources,
                 'attempts': attempts,
@@ -112,6 +114,7 @@ class RNSInterface:
         hash_str = data.decode('utf8')
         RNS.log(f"Processing request from client for {hash_str}")
         # TODO: Check if user is identified/allowed to make request in index
+        time.sleep(10)
         return self.cid_store.get_node(hash_str)
 
     def client_disconnected(self, link: RNS.Link):
