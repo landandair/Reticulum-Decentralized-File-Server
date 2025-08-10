@@ -76,7 +76,7 @@ class RNSInterface:
     def get_status(self):
         status = {}
         for node_hash in self.desired_hash_translation_map:
-            sources, attempts, next_allowed_time = self.desired_hash_translation_map[hash]
+            sources, attempts, next_allowed_time = self.desired_hash_translation_map[node_hash]
             progress = 0
             if node_hash in self.hash_progress:
                 progress = self.hash_progress[node_hash]
