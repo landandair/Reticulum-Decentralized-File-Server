@@ -100,6 +100,7 @@ class CidStore:
                 else:  # TODO: Check if what is in the index is older or of a more reliable source
                     logger.warning('Received node dictionary that was already in source node')
             # TODO: Mop up after node addition by removing all dereference nodes
+        self.save_index() # Save index after modifying it
 
     def set_update_callback(self, callback):
         self.callback = callback
@@ -172,7 +173,7 @@ class CidStore:
             size = len(data_store)
             stored = True
         else:  # Not a storage node, so calculate hash based on source path
-            hash_digest = self.get_path_hash(parent)
+            hash_digest = self.get_path_hash(parent, name)
         if hash_digest not in self.get_node_obj(parent).children:
             self.get_node_obj(parent).children.append(hash_digest)
         self.index[hash_digest] = Cid(hash_digest, name, time_stamp, size, parent, children, stored, node_type)
@@ -196,12 +197,15 @@ class CidStore:
                 os.mkdir(path)
             path = os.path.join(path, node.hash)
             return path
+        return None
 
-    def get_path_hash(self, parent_hash):
+    def get_path_hash(self, parent_hash, name=None):
         """Get hash associated with path to current hash to the source node"""
         hash_alg = self.hash_alg.copy()  # Hash alg for forming main file hash
         parents = self.get_parent_hashes(parent_hash)
         parents.append(parent_hash)  # full parent list for forming storage path
+        if name: # Add in the name to the hash like in the case of directories which can be functionally identical
+            parents.append(name)
         hash_alg.update(''.join(parents).encode('utf8'))
         hash_digest = hash_alg.hexdigest()
         return hash_digest
@@ -218,6 +222,7 @@ class CidStore:
     def get_node_obj(self, hash):
         if hash in self.index:
             return self.index[hash]
+        return None
 
     def get_node(self, hash):
         """Get data associated with node either its information about its children, or the file chunk itself packaged
@@ -232,9 +237,11 @@ class CidStore:
                 info = self.get_node_information(hash)
                 if len(info) >= 1:
                     return json.dumps(info)  # Return json encoded data
+                return None
             else:  # Look for data chunk to return
                 data = self.get_data(hash)
                 return data
+        return None
 
     def get_data(self, hash):
         """Blindly retrieve associated chunk data"""
@@ -248,8 +255,11 @@ class CidStore:
                     return data
                 else:
                     logger.warning(f'Data stored in {node.hash} did not match hash')
+                    return None
             else:
                 node.is_stored = False
+                return None
+        return None
 
     def get_node_information(self, hash, initial_req=True):
         """Returns a dict of all node information below hash in tree"""
@@ -280,8 +290,7 @@ class CidStore:
         if node:
             if node.type == Cid.TYPE_CHUNK:
                 return True
-        else:
-            return False
+        return False
 
     def get_parent_hashes(self, node_hash):
         """Returns a list of parent hashes starting at source"""
@@ -333,6 +342,7 @@ class CidStore:
                     if node.type == node.TYPE_CHUNK:
                         path = self.get_data_path(hash_id)
                         os.remove(path)
+
                     self.remove_hash(hash_id)
 
     def clean_hash_data(self, hash_id):

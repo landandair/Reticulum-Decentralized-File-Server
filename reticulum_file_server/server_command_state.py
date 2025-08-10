@@ -13,8 +13,6 @@ class ServerCommandState:
         self.rns_interface = rns_interface
         self.cid_store = cid_store
         self.cid_store.set_update_callback(callback=self.updated_hash_callback)
-        self.primary_req_queue = deque()
-        self.auto_req_queue = deque()
         self.max_file_size = max_file_size
         self.api_ip = host
         self.api_port = port
@@ -23,10 +21,9 @@ class ServerCommandState:
     def get_address(self):
         return self.api_ip, self.api_port
 
-    def should_auto_req(self, new_hash):
-        """TODO: Add a filter to only request hash on network if the metadata meets certain criteria(only use on files and
-        data chunks)"""
-        self.auto_req_queue.append(new_hash)
+    def get_status(self):
+        """Get the queue of the file server and summarize the results"""
+        return self.rns_interface.get_status()
 
     def get_node_info(self, node_hash):
         """Get node data associated to info"""
@@ -60,18 +57,23 @@ class ServerCommandState:
         node = self.cid_store.get_node_obj(node_hash)
         if node:
             return node.name
+        return ""
 
     def get_src_dest(self):
         return self.cid_store.source_hash
 
     def upload_file(self, file_name, file_data, parent=None):
         self.cid_store.add_file(file_name, file_data, parent)
+        self.cid_store.save_index()
 
     def make_dir(self, name, parent=None):
         self.cid_store.add_dir(name, parent)
+        self.cid_store.save_index()
 
     def delete_node(self, id):
-        return self.cid_store.remove_hash(id)
+        ret = self.cid_store.remove_hash(id)
+        self.cid_store.save_index()
+        return ret
 
     def updated_hash_callback(self, node_hash):
         """Called when the cid storage has added any nodes from a dictionary(json file)"""

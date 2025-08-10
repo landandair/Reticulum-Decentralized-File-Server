@@ -1,5 +1,6 @@
 from threading import Thread
 import io
+import base64
 
 import flask
 from flask_classful import FlaskView, request, route
@@ -13,15 +14,10 @@ class RNFSView(FlaskView):
         
                 ''')
 
-    @route("/site-map")
-    def site_map(self):
-        links = []
-        # for rule in .url_map.iter_rules():
-        #     # Filter out rules we can't navigate to in a browser
-        #     # and rules that require parameters
-        #     if "GET" in rule.methods and has_no_empty_params(rule):
-        #         url = url_for(rule.endpoint, **(rule.defaults or {}))
-        #         links.append((url, rule.endpoint))
+    @route("/getStatus", methods=['GET'], endpoint='getStatus')
+    def get_status(self):
+        """Return status/queue of the file server for insight into what its doing"""
+        return self.info.get_status()
 
     @route('/getNode/<id>', methods=['GET'], endpoint='getNode')
     def get_node(self, id=None):
@@ -50,7 +46,6 @@ class RNFSView(FlaskView):
         if request.method == 'POST':
             # check if the post request has the file part
             if 'file' not in request.files:
-                flask.flash('No file part')
                 return flask.redirect(request.url)
             file = request.files['file']
             parent = request.form['parent']
@@ -60,7 +55,11 @@ class RNFSView(FlaskView):
                 flask.flash('No selected file')
                 return flask.redirect(request.url)
             if file:
-                self.info.upload_file(file.filename, file.stream.read(), parent)
+                encoding = file.headers.get('Content-Transfer-Encoding')
+                body = file.stream.read()
+                if encoding == 'base64':
+                    body = base64.b64decode(body)
+                self.info.upload_file(file.filename, body, parent)
                 return flask.redirect(flask.url_for('uploadData',
                                         filename=file.filename))
         return '''

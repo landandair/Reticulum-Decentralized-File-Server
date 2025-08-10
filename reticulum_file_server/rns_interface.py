@@ -17,8 +17,9 @@ Periodic Checksum: Used for maintaining consistency across server instances ensu
 1. Announce(CS): Check sum of destination source index(sort supplied hashes combine them and calculate hash)
 2. Announce(RH): Requestor(s) requests hash of the destination and updates index accordingly
 """
-import os.path
+import os
 import time
+import json
 from threading import Thread
 import random
 from logging import getLogger
@@ -36,14 +37,14 @@ class RNSInterface:
     CHECKSUM_ID = "CS"  # Checksum of whole destination index check against local copy
 
     def __init__(self, cid_store: CidStore, server_destination: RNS.Destination, allowed_dest_path: str, allow_all=False):
-        self.hash_requests = []  # List of hashes requested from network
+        self.desired_hash_translation_map = {}  # List of hashes requested from network and their sources
+        self.hash_progress = {}  # List of hashes and their associated progress
         self.cid_store = cid_store  # Store of data
         self.currently_linked = False  # Maintain whether we are currently connected to a peer Used to limit incoming
         # and outgoing requests
         self.allow_all = allow_all
         self.allowed_peers = self.load_allowed_peers(allowed_dest_path)  # allowed peers who we will host files from
         # hash translation map list of requested hashes and a list of identities who can provide it
-        self.desired_hash_translation_map = {}
         self.request_id_to_hash = {}
         self.max_allowed_attempts = 5
 
@@ -72,6 +73,22 @@ class RNSInterface:
         RNS.Transport.register_announce_handler(announce_handler)
         self.start_service_loop()
 
+    def get_status(self):
+        status = {}
+        for node_hash in self.desired_hash_translation_map:
+            sources, attempts, next_allowed_time = self.desired_hash_translation_map[node_hash]
+            progress = 0
+            if node_hash in self.hash_progress:
+                progress = self.hash_progress[node_hash]
+            node_obj = self.cid_store.get_node_obj(node_hash)
+            status[node_hash] = {
+                'name': node_obj.name,
+                'progress': progress,
+                'sources': sources,
+                'attempts': attempts,
+            }
+        return json.dumps(status)
+
     def load_allowed_peers(self, path):
         allowed_dest = []
         if path or not self.allow_all:
@@ -97,6 +114,7 @@ class RNSInterface:
         hash_str = data.decode('utf8')
         RNS.log(f"Processing request from client for {hash_str}")
         # TODO: Check if user is identified/allowed to make request in index
+        time.sleep(10)
         return self.cid_store.get_node(hash_str)
 
     def client_disconnected(self, link: RNS.Link):
@@ -196,10 +214,12 @@ class RNSInterface:
         while not link.rtt or not link:
             time.sleep(.1)
         try:
+            self.hash_progress[hash_str] = 0
             receipt = link.request('RH',
                          data=hash_str.encode('utf8'),
                          response_callback=self.got_response_data,
-                         failed_callback=self.failed_response
+                         failed_callback=self.failed_response,
+                         progress_callback=self.got_progress
                          )
             if receipt:
                 self.request_id_to_hash[receipt.get_request_id()] = hash_str
@@ -214,10 +234,20 @@ class RNSInterface:
             self.cid_store.add_data(hash_str, response)
             self.request_id_to_hash.pop(request_id)
             self.desired_hash_translation_map.pop(hash_str)
+            self.hash_progress.pop(hash_str, None)  # Remove progress when complete
         response_rec.link.teardown()
 
     def failed_response(self, response: RNS.RequestReceipt):
-        RNS.log("The request " + RNS.prettyhexrep(response.request_id) + " failed.")
+        request_id = response.get_request_id()
+        hash_str = self.request_id_to_hash[request_id]
+        self.desired_hash_translation_map.pop(hash_str)
+        RNS.log("The request for: " + hash_str + " failed.")
+
+    def got_progress(self, response_rec: RNS.RequestReceipt):
+        request_id = response_rec.get_request_id()
+        hash_str = self.request_id_to_hash[request_id]
+        progress = response_rec.get_progress()
+
 
     def service_desired_hash_list(self):
         """Thread to service the desired hash dictionary"""

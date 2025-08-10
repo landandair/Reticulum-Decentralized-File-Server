@@ -65,16 +65,12 @@ def main(args):
                                                              max_file_size=max_size)
     for i in store.index:
         print(store.index[i])
-    try:
-        logger.info(f'Starting server using identity of: {server_destination.hexhash}')
-        while True:
-            pass  # Put a waiting loop here with basic announce functionality
-            inp = input()
-            if inp:
-                print("Announcing")
-                rns_interface.send_announce()
-    finally:
-        store.save_index()  # ensure index gets saved
+    logger.info(f'Starting server using identity of: {server_destination.hexhash}')
+    while True:
+        pass  # Put a waiting loop here with basic announce functionality
+        inp = input()
+        if inp:
+            rns_interface.send_announce()
 
 
 if __name__ == '__main__':
