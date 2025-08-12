@@ -81,8 +81,12 @@ class RNSInterface:
             if node_hash in self.hash_progress:
                 progress = self.hash_progress[node_hash]
             node_obj = self.cid_store.get_node_obj(node_hash)
+            if node_obj:
+                node_name = node_obj.name
+            else:
+                node_name = node_hash
             status[node_hash] = {
-                'name': node_obj.name,
+                'name': node_name,
                 'progress': progress,
                 'sources': sources,
                 'attempts': attempts,
