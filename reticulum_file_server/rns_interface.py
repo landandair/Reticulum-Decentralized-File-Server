@@ -81,13 +81,26 @@ class RNSInterface:
             if node_hash in self.hash_progress:
                 progress = self.hash_progress[node_hash]
             node_obj = self.cid_store.get_node_obj(node_hash)
+            if node_obj:
+                node_name = node_obj.name
+            else:
+                node_name = node_hash
             status[node_hash] = {
-                'name': node_obj.name,
+                'name': node_name,
                 'progress': progress,
                 'sources': sources,
                 'attempts': attempts,
             }
         return json.dumps(status)
+
+    def cancel_request(self, id: str):
+        ret = False
+        if id in self.hash_progress:
+            self.hash_progress.pop(id)
+        if id in self.desired_hash_translation_map:
+            self.desired_hash_translation_map.pop(id)
+            ret = True
+        return ret
 
     def load_allowed_peers(self, path):
         allowed_dest = []
@@ -247,7 +260,10 @@ class RNSInterface:
         request_id = response_rec.get_request_id()
         hash_str = self.request_id_to_hash[request_id]
         progress = response_rec.get_progress()
-
+        if hash_str in self.hash_progress:
+            self.hash_progress[hash_str] = progress
+        else:
+            response_rec.link.teardown()
 
     def service_desired_hash_list(self):
         """Thread to service the desired hash dictionary"""

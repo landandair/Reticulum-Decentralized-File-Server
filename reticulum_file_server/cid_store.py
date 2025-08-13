@@ -190,6 +190,7 @@ class CidStore:
         """Returns the path where data associated with node should be stored"""
         path = os.path.join(self.store_path, 'store')
         node = self.get_node_obj(node_hash)
+        print(node)
         if node:
             # for p in self.get_parent_hashes(node_hash):  # Calculating parent part of path
             #     path = os.path.join(path, self.index[p].hash)
@@ -323,27 +324,45 @@ class CidStore:
         data_hash = self.get_data_hash(b'', children_data, include_source=False)
         return data_hash
 
-    def remove_hash(self, hash_id):
-        node = self.get_node_obj(hash_id)
-        if node:
-            if node.type != node.TYPE_SRC:
-                self.index.pop(hash_id)
-                self.clean_data()
-                return True
-            else:
-                logger.warning("User attempted to delete root node")
-        return False
+    def remove_hash(self, hash_list):
+        ret_code = False
+        if type(hash_list) is str:
+            hash_list = [hash_list]
+        for hash_id in hash_list:
+            node = self.get_node_obj(hash_id)
+            if node:
+                if node.type != node.TYPE_SRC:
+                    self.clean_data_file(node)
+                    self.clean_parent_children(node)
+                    self.index.pop(hash_id)
+                    ret_code = True
+                else:
+                    logger.warning("User attempted to delete root node")
+        if ret_code:
+            self.clean_data()
+        return ret_code
 
     def clean_data(self):
-        for hash_id in tuple(self.index.keys()):
+        remove_keys = []
+        for hash_id in self.index.keys():
             node = self.get_node_obj(hash_id)
             if node:
                 if node.parent not in self.index and node.type != node.TYPE_SRC:
-                    if node.type == node.TYPE_CHUNK:
-                        path = self.get_data_path(hash_id)
-                        os.remove(path)
+                    self.clean_data_file(node)
+                    remove_keys.append(hash_id)
+        self.remove_hash(remove_keys)
 
-                    self.remove_hash(hash_id)
+    def clean_data_file(self, node):
+        if node.type == node.TYPE_CHUNK:
+            path = self.get_data_path(node.hash)
+            if os.path.exists(path):
+                os.remove(path)
+
+    def clean_parent_children(self, node):
+        if node.type != node.TYPE_CHUNK:
+            parent = self.get_node_obj(node.parent)
+            if parent:
+                parent.children.remove(node.hash)
 
     def clean_hash_data(self, hash_id):
         node = self.get_node_obj(hash_id)

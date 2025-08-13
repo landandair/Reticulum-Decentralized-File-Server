@@ -75,6 +75,10 @@ class ServerCommandState:
         self.cid_store.save_index()
         return ret
 
+    def cancel_request(self, id: str):
+        ret = self.rns_interface.cancel_request(id)
+        return ret
+
     def updated_hash_callback(self, node_hash):
         """Called when the cid storage has added any nodes from a dictionary(json file)"""
         node = self.cid_store.get_node_obj(node_hash)
