@@ -24,15 +24,10 @@ Currently is very proof of concept but is in bare form functional and quite adva
 TODO:
 
 api:
-- Needs way to cancel requests
 
 rns:  
-- Need way to cancel jobs in progress
 
 store:  
-- URGENT: Fix bug where file store nodes are not removed from child lists or parent node lists when being removed from the store
-- Fixed bug where removed files do not remove their associated data stores provided no other file node is referencing that data chunk(copies of files)
 - Needs conversion to sqlite
 
 base state class: 
-- cancel request call needed
