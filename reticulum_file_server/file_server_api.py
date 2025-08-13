@@ -107,6 +107,15 @@ class RNFSView(FlaskView):
         else:
             return 'Not Found'
 
+    @route('/cancel/<id>', methods=['GET'], endpoint='cancel')
+    def cancel_request(self, id):
+        """cancel request to the network"""
+        ret = self.info.cancel_request(id)
+        if ret:
+            return 'success'
+        else:
+            return 'Not Found'
+
 
 def start_server_thread(server_info):
     t = Thread(target=start_server, args=[server_info], daemon=True)
